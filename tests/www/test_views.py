@@ -20,6 +20,7 @@
 import io
 import copy
 import logging.config
+import mock
 import os
 import shutil
 import tempfile
@@ -32,7 +33,7 @@ from werkzeug.test import Client
 
 from airflow import models, configuration, settings
 from airflow.config_templates.airflow_local_settings import DEFAULT_LOGGING_CONFIG
-from airflow.models import DAG, DagRun, TaskInstance
+from airflow.models import DAG, DagRun, TaskInstance, BaseOperator
 from airflow.operators.dummy_operator import DummyOperator
 from airflow.settings import Session
 from airflow.utils.timezone import datetime
@@ -744,6 +745,85 @@ class TestGanttView(unittest.TestCase):
 
     def test_dt_nr_dr_form_with_base_date_and_num_runs_and_execution_date_within(self):
         self.tester.test_with_base_date_and_num_runs_and_execution_date_within()
+
+
+class TestRedirect(unittest.TestCase):
+    def setUp(self):
+        configuration.load_test_config()
+        self.ENDPOINT = '/admin/airflow/redirect'
+        self.DEFAULT_DATE = datetime(2017, 1, 1)
+        self.app = application.create_app().test_client()
+
+        class DummyTestOperator(BaseOperator):
+            extra_links = ['foo-bar']
+
+            def get_redirect_url(self, ddtm, redirect_to):
+                if redirect_to == 'raise_error':
+                    raise ValueError('This is an error')
+                if redirect_to == 'no_response':
+                    return None
+                return 'http://www.example.com/{0}/{1}/{2}'.format(self.task_id,
+                                                                   redirect_to, ddtm)
+
+        self.dag = DAG('dag', start_date=self.DEFAULT_DATE)
+        self.task = DummyTestOperator(task_id="some_dummy_task", dag=self.dag)
+
+    @mock.patch('airflow.www.views.dagbag.get_dag')
+    def test_redirect_method_whitelisted(self, get_dag_function):
+        get_dag_function.return_value = self.dag
+
+        configuration.set('webserver', 'whitelisted_domains', 'http://www.example.com')
+        response = self.app.get(
+            "{0}?dag_id={1}&task_id={2}&execution_date={3}&redirect_to=foo-bar"
+            .format(self.ENDPOINT, self.dag.dag_id, self.task.task_id, self.DEFAULT_DATE),
+            follow_redirects=True)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(json.loads(response.data), {
+            'url': 'http://www.example.com/some_dummy_task/foo-bar/2017-01-01T00:00:00+00:00',
+            'error': None
+        })
+
+    @mock.patch('airflow.www.views.dagbag.get_dag')
+    def test_redirect_method_error_raised(self, get_dag_function):
+        get_dag_function.return_value = self.dag
+
+        response = self.app.get(
+            "{0}?dag_id={1}&task_id={2}&execution_date={3}&redirect_to=raise_error"
+            .format(self.ENDPOINT, self.dag.dag_id, self.task.task_id, self.DEFAULT_DATE),
+            follow_redirects=True)
+
+        self.assertEqual(404, response.status_code)
+        self.assertEqual(json.loads(response.data), {
+            'url': None,
+            'error': 'This is an error'})
+
+    @mock.patch('airflow.www.views.dagbag.get_dag')
+    def test_redirect_method_no_response(self, get_dag_function):
+        get_dag_function.return_value = self.dag
+
+        response = self.app.get(
+            "{0}?dag_id={1}&task_id={2}&execution_date={3}&redirect_to=no_response"
+            .format(self.ENDPOINT, self.dag.dag_id, self.task.task_id, self.DEFAULT_DATE),
+            follow_redirects=True)
+
+        self.assertEqual(response.status_code, 404)
+        self.assertEqual(json.loads(response.data), {
+            'url': None,
+            'error': 'No URL found for no_response'})
+
+    @mock.patch('airflow.www.views.dagbag.get_dag')
+    def test_redirect_not_whitelisted(self, get_dag_function):
+        get_dag_function.return_value = self.dag
+
+        response = self.app.get(
+            "{0}?dag_id={1}&task_id={2}&execution_date={3}&redirect_to=foo-bar"
+            .format(self.ENDPOINT, self.dag.dag_id, self.task.task_id, self.DEFAULT_DATE))
+
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(json.loads(response.data), {
+            'url': None,
+            'error': 'http://www.example.com is not whitelisted. Linking is forbidden'})
 
 
 if __name__ == '__main__':

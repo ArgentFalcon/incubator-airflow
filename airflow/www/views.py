@@ -1894,25 +1894,34 @@ class Airflow(BaseView):
                 task = t
                 break
 
-        url = task.get_redirect_url(dttm, redirect_to)
-
+        try:
+            url = task.get_redirect_url(dttm, redirect_to)
+        except ValueError as err:
+            print(err)
+            response = jsonify({'url': None,
+                                'error': str(err)})
+            response.status_code = 404
+            return response
         if url:
             allowed_domains = conf.get('webserver', 'whitelisted_domains')
             parsed_uri = urlparse(url)
-            domain = '{uri.scheme}://{uri.netloc}/'.format(uri=parsed_uri)
+            domain = '{uri.scheme}://{uri.netloc}'.format(uri=parsed_uri)
             if domain in allowed_domains:
-                return redirect(url)
+                response = jsonify({'error': None,
+                                    'url': url})
+                response.status_code = 200
+                print(response)
+                return response
             else:
-                flash("Couldn't redirect to {}, as the domain {} is "
-                      "not whitelisted".format(url, domain))
-            return redirect(request.referrer or '/admin/')
+                response = jsonify({'url': None,
+                                    'error': '{url} is not whitelisted. Linking is forbidden'.format(url=domain)})
+                response.status_code = 403
+                return response
         else:
-            flash(
-                "Couldn't redirect to {} for [{}.{}]"
-                " at the moment".format(redirect_to, dag_id, task_id),
-                "error")
-            return redirect(request.referrer or '/admin/')
-
+            response = jsonify({'url': None,
+                                'error': 'No URL found for {destination}'.format(destination=redirect_to)})
+            response.status_code = 404
+            return response
 
     @expose('/object/task_instances')
     @login_required
