@@ -1872,7 +1872,24 @@ class Airflow(BaseView):
     @login_required
     @wwwutils.action_logging
     def redirect(self):
+        """
+        A restful endpoint that returns external links for a given Operator
 
+        It queries the operator that sent the request for the links it wishes
+        to provide for a given external link name.
+
+        API: GET
+        Args: dag_id: The id of the dag containing the task in question
+              task_id: The id of the task in question
+              execution_date: The date of execution of the task
+              redirect_to: The name of the link reference to find the actual URL for
+
+        Returns:
+            200: {url: <url of link>, error: None} - returned when there was no problem finding
+                the URL, and the URL is whitelisted
+            403: {url: None, error: <error message>} - returned when the URL is not whitelisted
+            404: {url: None, error: <error message>} - returned when the operator does not return a URL
+        :return:
         dag_id = request.args.get('dag_id')
         task_id = request.args.get('task_id')
         execution_date = request.args.get('execution_date')
