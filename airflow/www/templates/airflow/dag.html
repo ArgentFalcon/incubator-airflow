@@ -308,13 +308,32 @@ function updateQueryStringParameter(uri, key, value) {
                   "&execution_date=" + encodeURIComponent(execution_date) +
                   "&redirect_to=" + encodeURIComponent(link);
 
-          var a = '<a href="' + url + '" class="btn btn-primary" target="_blank">' + link + '</a>';
+          var a = '<span class="tool-tip" data-toggle="tooltip" style="padding-right: 1px; padding-left: 1px" data-placement="top" ' +
+                  'title="link not yet available" id="tooltip-' + link +'">' +
+                    '<a id="link-' + link +'" href="#" data-toggle="tooltip" class="btn btn-primary disabled" target="_blank">' + link + '</a>' +
+                  '</span>';
+          $.ajax(
+            {url: url,
+             cache: false,
+             success: function (data, textStatus, jqXHR) {
+               var external_link = $( "#link-" + link );
+               external_link.attr('href', data['url']);
+               external_link.removeClass('disabled');
+               $("#tooltip-" + link).tooltip('disable');
+             },
+             error:  function (data) {
+               console.log(data['responseJSON']['error']);
+               var link_tooltip = $("#tooltip-" + link);
+               link_tooltip.tooltip('hide').attr('title', data['responseJSON']['error']).tooltip('fixTitle');
+             }
+           });
 
           markupArr.push(a)
         });
 
         $('#extra_links').prev('hr').show();
         $('#extra_links').append(markupArr.join('')).show();
+        $('[data-toggle="tooltip"]').tooltip();
       }
 
     }
