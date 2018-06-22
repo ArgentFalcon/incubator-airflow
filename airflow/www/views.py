@@ -1890,6 +1890,7 @@ class Airflow(BaseView):
             403: {url: None, error: <error message>} - returned when the URL is not whitelisted
             404: {url: None, error: <error message>} - returned when the operator does not return a URL
         :return:
+        """
         dag_id = request.args.get('dag_id')
         task_id = request.args.get('task_id')
         execution_date = request.args.get('execution_date')
